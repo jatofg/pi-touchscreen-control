@@ -20,7 +20,9 @@ pub fn run_dimmer(config: &Config) {
     }
     let mut current_brightness = read_actual_brightness((config.dimmer.backlight.clone() + "/actual_brightness").as_ref());
     let full_brightness = config.dimmer.full_brightness;
+    let full_brightness_buf = full_brightness.to_string().into_bytes();
     let dimmed_brightness = config.dimmer.dimmed_brightness;
+    let dimmed_brightness_buf = dimmed_brightness.to_string().into_bytes();
 
     let brightness_path = config.dimmer.backlight.clone() + "/brightness";
     let mut brightness_file = OpenOptions::new().read(false).write(true).open(&brightness_path)
@@ -36,14 +38,14 @@ pub fn run_dimmer(config: &Config) {
             }
             if new_touch {
                 last_touch = Instant::now();
-                brightness_file.write_all(&[full_brightness]).expect("Unable to write brightness");
+                brightness_file.write_all(full_brightness_buf.as_slice()).expect("Unable to write brightness");
                 current_brightness = full_brightness;
             }
         }
 
         if last_touch.elapsed() > config.dimmer.timeout {
             if current_brightness != dimmed_brightness {
-                brightness_file.write_all(&[dimmed_brightness]).expect("Unable to write brightness");
+                brightness_file.write_all(dimmed_brightness_buf.as_slice()).expect("Unable to write brightness");
                 current_brightness = dimmed_brightness;
             }
         }
