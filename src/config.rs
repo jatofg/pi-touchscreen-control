@@ -2,7 +2,8 @@ use std::fs;
 use std::time::Duration;
 use yaml_rust2::YamlLoader;
 
-pub struct Dimmer {
+#[derive(Clone)]
+pub struct DimmerConfig {
     pub timeout: Duration,
     pub backlight: String,
     pub input_devices: Vec<String>,
@@ -10,8 +11,23 @@ pub struct Dimmer {
     pub full_brightness: u8,
 }
 
+#[derive(Clone)]
+pub struct MqttConfig {
+    pub use_mqtt: bool,
+    pub server_address: String,
+    pub server_port: u16,
+    pub auth_username: String,
+    pub auth_password: String,
+    pub discovery_topic_prefix: String,
+    pub app_topic_prefix: String,
+    pub device_id: String,
+    pub device_name: String,
+}
+
+#[derive(Clone)]
 pub struct Config {
-    pub dimmer: Dimmer,
+    pub dimmer: DimmerConfig,
+    pub mqtt: MqttConfig,
 }
 
 impl Config {
@@ -19,7 +35,7 @@ impl Config {
         let file_content = fs::read_to_string(file_name).expect("Unable to read config file");
         let configs = YamlLoader::load_from_str(&file_content).expect("Unable to parse config file");
         let config = &configs[0];
-        let dimmer = Dimmer {
+        let dimmer = DimmerConfig {
             timeout: Duration::new(config["dimmer"]["timeout_sec"].as_i64().unwrap_or(30) as u64, 0),
             backlight: config["dimmer"]["backlight"].as_str().unwrap_or("/sys/class/backlight/rpi-backlight").to_string(),
             input_devices: config["dimmer"]["input_devices"].as_vec()
@@ -29,8 +45,20 @@ impl Config {
             dimmed_brightness: config["dimmer"]["dimmed_brightness"].as_i64().unwrap_or(30) as u8,
             full_brightness: config["dimmer"]["full_brightness"].as_i64().unwrap_or(255) as u8,
         };
+        let mqtt = MqttConfig {
+            use_mqtt: config["mqtt"]["use_mqtt"].as_bool().unwrap_or(false),
+            server_address: config["mqtt"]["server_address"].as_str().unwrap_or("127.0.0.1").to_string(),
+            server_port: config["mqtt"]["server_port"].as_i64().unwrap_or(1883) as u16,
+            auth_username: config["mqtt"]["auth_username"].as_str().unwrap_or("").to_string(),
+            auth_password: config["mqtt"]["auth_password"].as_str().unwrap_or("").to_string(),
+            discovery_topic_prefix: config["mqtt"]["discovery_topic_prefix"].as_str().unwrap_or("homeassistant").to_string(),
+            app_topic_prefix: config["mqtt"]["app_topic_prefix"].as_str().unwrap_or("pi_ts_control").to_string(),
+            device_id: config["mqtt"]["device_id"].as_str().unwrap_or("pi_ts_control").to_string(),
+            device_name: config["mqtt"]["device_name"].as_str().unwrap_or("Pi Touchscreen").to_string(),
+        };
         Self {
             dimmer,
+            mqtt,
         }
     }
 }

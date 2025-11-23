@@ -10,3 +10,22 @@ dimmer:
   dimmed_brightness: 30
   # The brightness after an input event has been recorded (value between 0 and 255).
   full_brightness: 255
+mqtt:
+  # Whether to enable the Home Assistant integration via MQTT.
+  use_mqtt: false
+  # The address or IP of the MQTT broker.
+  server_address: 127.0.0.1
+  # The port of the MQTT broker.
+  server_port: 1883
+  # The username for authentication with the MQTT broker. Leave blank if no authentication is required.
+  auth_username:
+  # The password for authentication with the MQTT broker. Leave blank if no password is required.
+  auth_password:
+  # The MQTT topic prefix of the Home Assistant MQTT discovery. homeassistant is the right value unless manually changed.
+  discovery_topic_prefix: homeassistant
+  # The MQTT topic prefix for pi-touchscreen-control. Must be unique for each instance.
+  app_topic_prefix: pi_ts_control
+  # The device ID for Home Assistant. Must be unique for each instance.
+  device_id: pi_ts_control
+  # The device name for Home Assistant.
+  device_name: Pi Touchscreen

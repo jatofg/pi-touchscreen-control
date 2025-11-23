@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::DimmerConfig;
 use std::fs::OpenOptions;
 use std::os::unix::fs::OpenOptionsExt;
 use std::io::{Read, Write};
@@ -12,19 +12,19 @@ fn read_actual_brightness(path: &Path) -> u8 {
     buffer[0]
 }
 
-pub fn run_dimmer(config: &Config) {
+pub fn run_dimmer(config: &DimmerConfig) {
     let mut devices = Vec::new();
-    for device_path in config.dimmer.input_devices.iter() {
+    for device_path in config.input_devices.iter() {
         devices.push(OpenOptions::new().read(true).write(false).custom_flags(libc::O_NONBLOCK).open(&device_path)
             .expect(format!("Unable to open device {device_path}").as_str()));
     }
-    let mut current_brightness = read_actual_brightness((config.dimmer.backlight.clone() + "/actual_brightness").as_ref());
-    let full_brightness = config.dimmer.full_brightness;
+    let mut current_brightness = read_actual_brightness((config.backlight.clone() + "/actual_brightness").as_ref());
+    let full_brightness = config.full_brightness;
     let full_brightness_buf = full_brightness.to_string().into_bytes();
-    let dimmed_brightness = config.dimmer.dimmed_brightness;
+    let dimmed_brightness = config.dimmed_brightness;
     let dimmed_brightness_buf = dimmed_brightness.to_string().into_bytes();
 
-    let brightness_path = config.dimmer.backlight.clone() + "/brightness";
+    let brightness_path = config.backlight.clone() + "/brightness";
     let mut brightness_file = OpenOptions::new().read(false).write(true).open(&brightness_path)
         .expect("Unable to open brightness file");
     let mut last_touch = Instant::now();
@@ -43,7 +43,7 @@ pub fn run_dimmer(config: &Config) {
             }
         }
 
-        if last_touch.elapsed() > config.dimmer.timeout {
+        if last_touch.elapsed() > config.timeout {
             if current_brightness != dimmed_brightness {
                 brightness_file.write_all(dimmed_brightness_buf.as_slice()).expect("Unable to write brightness");
                 current_brightness = dimmed_brightness;

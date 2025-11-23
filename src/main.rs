@@ -1,5 +1,6 @@
 mod config;
 mod dimmer;
+mod mqtt;
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
@@ -8,5 +9,12 @@ fn main() {
         return;
     }
     let config = config::Config::new(args[1].as_str());
-    dimmer::run_dimmer(&config);
+
+    let dimmer_config = config.dimmer.clone();
+    let dimmer_handle = std::thread::spawn(move || dimmer::run_dimmer(&dimmer_config));
+    let mqtt_config = config.mqtt.clone();
+    // TODO check use_mqtt
+    let mqtt_handle = std::thread::spawn(move || mqtt::run_mqtt(&mqtt_config));
+    dimmer_handle.join().unwrap();
+    mqtt_handle.join().unwrap();
 }
