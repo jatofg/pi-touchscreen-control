@@ -1,5 +1,6 @@
 use crate::config::Config;
 use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -14,7 +15,7 @@ fn read_actual_brightness(path: &Path) -> u8 {
 pub fn run_dimmer(config: &Config) {
     let mut devices = Vec::new();
     for device_path in config.dimmer.input_devices.iter() {
-        devices.push(OpenOptions::new().read(true).write(false).open(&device_path)
+        devices.push(OpenOptions::new().read(true).write(false).custom_flags(libc::O_NONBLOCK).open(&device_path)
             .expect(format!("Unable to open device {device_path}").as_str()));
     }
     let mut current_brightness = read_actual_brightness((config.dimmer.backlight.clone() + "/actual_brightness").as_ref());

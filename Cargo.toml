@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 yaml-rust2 = "0.10"
+libc = "1.0.0-alpha.1"
