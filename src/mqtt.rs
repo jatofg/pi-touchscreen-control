@@ -1,13 +1,13 @@
 extern crate env_logger;
 
+use std::sync::mpsc::Sender;
 use log::{info};
 use mosquitto_rs::*;
 use async_std::task;
 use serde_json::json;
 use crate::config::MqttConfig;
 
-pub fn run_mqtt(config: &MqttConfig) {
-    env_logger::init();
+async fn publish_device_config(client: &Client, config: &MqttConfig) {
     let discovery = json!({
         "dev": {
             "ids": config.device_id.clone(),
@@ -36,6 +36,15 @@ pub fn run_mqtt(config: &MqttConfig) {
         }
     }).to_string();
 
+    let device_config_topic = config.discovery_topic_prefix.clone() + "/device/" + config.device_id.as_str() + "/config";
+    client
+        .publish(device_config_topic.as_str(), discovery.as_str(), QoS::ExactlyOnce, false)
+        .await.expect("Unable to publish device config");
+}
+
+pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
+    env_logger::init();
+
     let user_name = if config.auth_username.is_empty() { None } else { Some(config.auth_username.as_str()) };
     let password = if config.auth_password.is_empty() { None } else { Some(config.auth_password.as_str()) };
 
@@ -55,10 +64,7 @@ pub fn run_mqtt(config: &MqttConfig) {
         client.subscribe(home_assistant_status_topic.as_str(), QoS::AtMostOnce).await.unwrap();
         info!("Subscribed to relevant topics");
 
-        let device_config_topic = config.discovery_topic_prefix.clone() + "/device/" + config.device_id.as_str() + "/config";
-        client
-            .publish(device_config_topic.as_str(), discovery.as_str(), QoS::ExactlyOnce, false)
-            .await.expect("Unable to publish device config");
+        publish_device_config(&client, config).await;
         let power_state_available_topic = config.app_topic_prefix.clone() + "/power_state/available";
         client
             .publish(power_state_available_topic.as_str(), "online", QoS::ExactlyOnce, false)
@@ -72,17 +78,24 @@ pub fn run_mqtt(config: &MqttConfig) {
         let power_state_set_topic = config.app_topic_prefix.clone() + "/power_state/set";
         loop {
             if let Ok(event) = subscriptions.recv().await {
-                if let Event::Message(msg) = event && msg.topic == power_state_set_topic {
-                    if msg.payload == b"on" {
-                        info!("Turning backlight on");
-                        client
-                            .publish(power_state_state_topic.as_str(), "on", QoS::ExactlyOnce, false)
-                            .await.unwrap();
-                    } else {
-                        info!("Turning backlight off");
-                        client
-                            .publish(power_state_state_topic.as_str(), "off", QoS::ExactlyOnce, false)
-                            .await.unwrap();
+                if let Event::Message(msg) = event {
+                    if msg.topic == power_state_set_topic {
+                        if msg.payload == b"on" {
+                            info!("Turning backlight on");
+                            client
+                                .publish(power_state_state_topic.as_str(), "on", QoS::ExactlyOnce, false)
+                                .await.unwrap();
+                            power_state_sender.send(true).expect("Unable to send requested power state");
+                        } else {
+                            info!("Turning backlight off");
+                            client
+                                .publish(power_state_state_topic.as_str(), "off", QoS::ExactlyOnce, false)
+                                .await.unwrap();
+                            power_state_sender.send(false).expect("Unable to send requested power state");
+                        }
+                    } else if msg.topic == home_assistant_status_topic && msg.payload == b"online" {
+                        info!("Publishing device config again on Home Assistant restart");
+                        publish_device_config(&client, config).await;
                     }
                 }
             }

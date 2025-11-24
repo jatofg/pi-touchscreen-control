@@ -12,6 +12,14 @@ fn read_actual_brightness(path: &Path) -> u8 {
     buffer[0]
 }
 
+pub fn set_backlight_power(config: &DimmerConfig, power: bool) {
+    let power_path = config.backlight.clone() + "/bl_power";
+    let mut power_file = OpenOptions::new().read(false).write(true).open(&power_path)
+        .expect("Unable to open bl_power file");
+    let power_buf: &[u8; 1] = if power { b"1" } else { b"0" };
+    power_file.write_all(power_buf).expect("Unable to write bl_power");
+}
+
 pub fn run_dimmer(config: &DimmerConfig) {
     let mut devices = Vec::new();
     for device_path in config.input_devices.iter() {
