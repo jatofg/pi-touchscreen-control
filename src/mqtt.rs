@@ -40,6 +40,11 @@ async fn publish_device_config(client: &Client, config: &MqttConfig) {
     client
         .publish(device_config_topic.as_str(), discovery.as_str(), QoS::ExactlyOnce, false)
         .await.expect("Unable to publish device config");
+
+    let power_state_available_topic = config.app_topic_prefix.clone() + "/power_state/available";
+    client
+        .publish(power_state_available_topic.as_str(), "online", QoS::ExactlyOnce, false)
+        .await.expect("Unable to publish availability");
 }
 
 pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
@@ -65,10 +70,8 @@ pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
         info!("Subscribed to relevant topics");
 
         publish_device_config(&client, config).await;
-        let power_state_available_topic = config.app_topic_prefix.clone() + "/power_state/available";
-        client
-            .publish(power_state_available_topic.as_str(), "online", QoS::ExactlyOnce, false)
-            .await.expect("Unable to publish availability");
+
+        // TODO send power state in publish_device_config
         let power_state_state_topic = config.app_topic_prefix.clone() + "/power_state/state";
         client
             .publish(power_state_state_topic.as_str(), "on", QoS::ExactlyOnce, false)
