@@ -16,7 +16,7 @@ pub fn set_backlight_power(config: &DimmerConfig, power: bool) {
     let power_path = config.backlight.clone() + "/bl_power";
     let mut power_file = OpenOptions::new().read(false).write(true).open(&power_path)
         .expect("Unable to open bl_power file");
-    let power_buf: &[u8; 1] = if power { b"1" } else { b"0" };
+    let power_buf: &[u8; 1] = if power { b"0" } else { b"1" };
     power_file.write_all(power_buf).expect("Unable to write bl_power");
 }
 
