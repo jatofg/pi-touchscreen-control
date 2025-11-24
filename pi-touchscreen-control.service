@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi Touchscreen Control
+Requires=graphical.target
+After=graphical.target
+
+[Service]
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/bin/nice -n 19 /usr/local/bin/pi-touchscreen-control /etc/pi-touchscreen-control/config.yaml
+Restart=on-abort
+User=root
+Group=root
+
+[Install]
+WantedBy=graphical.target
