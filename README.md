@@ -36,7 +36,7 @@ To control the backlight via Home Assistant, you need to install the MQTT integr
 
 ## Running it
 
-The recommended way to run this is via systemd (but of course you can also run the binary itself with the path to the config file as the only argument).
+The recommended way to run this is via systemd (but of course you can also run the binary itself with the path to the config file as the only argument - make sure to run it as root, otherwise the backlight cannot be controlled).
 
 To start it (after installing) and automatically start it after boot:
 
