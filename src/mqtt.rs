@@ -7,7 +7,7 @@ use async_std::task;
 use serde_json::json;
 use crate::config::MqttConfig;
 
-async fn publish_device_config_and_state(client: &Client, config: &MqttConfig, currentPowerState: bool) {
+async fn publish_device_config_and_state(client: &Client, config: &MqttConfig, current_power_state: bool) {
     let discovery = json!({
         "dev": {
             "ids": config.device_id.clone(),
@@ -48,7 +48,7 @@ async fn publish_device_config_and_state(client: &Client, config: &MqttConfig, c
 
     let power_state_state_topic = config.app_topic_prefix.clone() + "/power_state/state";
     client
-        .publish(power_state_state_topic.as_str(), if currentPowerState { "on" } else { "off" }, QoS::ExactlyOnce, false)
+        .publish(power_state_state_topic.as_str(), if current_power_state { "on" } else { "off" }, QoS::ExactlyOnce, false)
         .await.expect("Unable to publish power state");
     info!("Published config, availability and state");
 }
