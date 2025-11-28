@@ -6,6 +6,7 @@ use mosquitto_rs::*;
 use async_std::task;
 use serde_json::json;
 use crate::config::MqttConfig;
+use crate::state::State;
 
 async fn publish_device_config(client: &Client, config: &MqttConfig) {
     let discovery = json!({
@@ -47,15 +48,16 @@ async fn publish_device_config(client: &Client, config: &MqttConfig) {
         .await.expect("Unable to publish availability");
 }
 
-async fn publish_state(client: &Client, config: &MqttConfig, current_power_state: bool) {
+async fn publish_state(client: &Client, config: &MqttConfig, current_state: &State) {
+    // TODO add stuff from state
     let power_state_state_topic = config.app_topic_prefix.clone() + "/power_state/state";
     client
-        .publish(power_state_state_topic.as_str(), if current_power_state { "on" } else { "off" }, QoS::ExactlyOnce, false)
+        .publish(power_state_state_topic.as_str(), if current_state.backlight_active_current { "on" } else { "off" }, QoS::ExactlyOnce, false)
         .await.expect("Unable to publish power state");
     info!("Published power state");
 }
 
-pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
+pub fn run_mqtt(config: &MqttConfig, initial_state: &State, state_sender: Sender<State>) {
     env_logger::init();
 
     let user_name = if config.auth_username.is_empty() { None } else { Some(config.auth_username.as_str()) };
@@ -77,11 +79,13 @@ pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
         client.subscribe(home_assistant_status_topic.as_str(), QoS::AtMostOnce).await.unwrap();
         info!("Subscribed to relevant topics");
 
+        // TODO do not publish device config here, but only once after starting
         publish_device_config(&client, config).await;
-        publish_state(&client, config, true).await;
+
+        let mut state = initial_state.clone();
+        publish_state(&client, config, &state).await;
 
         let power_state_set_topic = config.app_topic_prefix.clone() + "/power_state/set";
-        let mut current_power_state = true;
 
         loop {
             if let Ok(event) = subscriptions.recv().await {
@@ -89,18 +93,18 @@ pub fn run_mqtt(config: &MqttConfig, power_state_sender: Sender<bool>) {
                     if msg.topic == power_state_set_topic {
                         if msg.payload == b"on" {
                             info!("Turning backlight on");
-                            publish_state(&client, config, true).await;
-                            current_power_state = true;
-                            power_state_sender.send(true).expect("Unable to send requested power state");
+                            state.backlight_active_current = true;
+                            publish_state(&client, config, &state).await;
+                            state_sender.send(state.clone()).expect("Unable to send requested state");
                         } else {
                             info!("Turning backlight off");
-                            publish_state(&client, config, false).await;
-                            current_power_state = false;
-                            power_state_sender.send(false).expect("Unable to send requested power state");
+                            state.backlight_active_current = false;
+                            publish_state(&client, config, &state).await;
+                            state_sender.send(state.clone()).expect("Unable to send requested state");
                         }
                     } else if msg.topic == home_assistant_status_topic && msg.payload == b"online" {
                         info!("Publishing state again on Home Assistant restart");
-                        publish_state(&client, config, current_power_state).await;
+                        publish_state(&client, config, &state).await;
                     }
                 }
             }

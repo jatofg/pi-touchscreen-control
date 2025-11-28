@@ -1,11 +1,15 @@
 dimmer:
-  # After how many seconds should the screen be dimmed?
+  # Whether to enable dimming or turning off the screen after a period of inactivity.
+  use_dimmer: true
+  # After how many seconds should the screen be dimmed or turned off?
   timeout_sec: 30
   # Which backlight to use. May also be /sys/class/backlight/rpi-backlight or something else.
   backlight: /sys/class/backlight/10-0045
   # Which input devices to listen to. Usually /dev/input/mice is a good place to start.
   input_devices:
     - /dev/input/mice
+  # Whether to turn the backlight off entirely after inactivity.
+  turn_backlight_off: false
   # The brightness after dimming down (value between 0 and 255).
   dimmed_brightness: 30
   # The brightness after an input event has been recorded (value between 0 and 255).
