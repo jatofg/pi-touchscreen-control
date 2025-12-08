@@ -1,12 +1,12 @@
 extern crate env_logger;
 
-use std::sync::mpsc::Sender;
-use log::{info};
-use mosquitto_rs::*;
-use async_std::task;
-use serde_json::json;
 use crate::config::MqttConfig;
 use crate::state::State;
+use async_std::task;
+use log::info;
+use mosquitto_rs::*;
+use serde_json::json;
+use std::sync::{Arc, RwLock};
 
 async fn publish_device_config(client: &Client, config: &MqttConfig) {
     let discovery = json!({
@@ -35,54 +35,101 @@ async fn publish_device_config(client: &Client, config: &MqttConfig) {
                 "payload_not_available": "offline",
             }
         }
-    }).to_string();
+    })
+    .to_string();
 
-    let device_config_topic = config.discovery_topic_prefix.clone() + "/device/" + config.device_id.as_str() + "/config";
+    let device_config_topic =
+        config.discovery_topic_prefix.clone() + "/device/" + config.device_id.as_str() + "/config";
     client
-        .publish(device_config_topic.as_str(), discovery.as_str(), QoS::ExactlyOnce, true)
-        .await.expect("Unable to publish device config");
+        .publish(
+            device_config_topic.as_str(),
+            discovery.as_str(),
+            QoS::ExactlyOnce,
+            true,
+        )
+        .await
+        .expect("Unable to publish device config");
 
     let power_state_available_topic = config.app_topic_prefix.clone() + "/power_state/available";
     client
-        .publish(power_state_available_topic.as_str(), "online", QoS::ExactlyOnce, true)
-        .await.expect("Unable to publish availability");
+        .publish(
+            power_state_available_topic.as_str(),
+            "online",
+            QoS::ExactlyOnce,
+            true,
+        )
+        .await
+        .expect("Unable to publish availability");
 }
 
-async fn publish_state(client: &Client, config: &MqttConfig, current_state: &State) {
+async fn publish_state(client: &Client, config: &MqttConfig, state: &Arc<RwLock<State>>) {
     // TODO add stuff from state
     let power_state_state_topic = config.app_topic_prefix.clone() + "/power_state/state";
+    let current_state = state
+        .read()
+        .expect("Unable to acquire read lock on state")
+        .clone();
     client
-        .publish(power_state_state_topic.as_str(), if current_state.backlight_active_current { "on" } else { "off" }, QoS::ExactlyOnce, false)
-        .await.expect("Unable to publish power state");
+        .publish(
+            power_state_state_topic.as_str(),
+            if current_state.backlight_active_current {
+                "on"
+            } else {
+                "off"
+            },
+            QoS::ExactlyOnce,
+            false,
+        )
+        .await
+        .expect("Unable to publish power state");
     info!("Published power state");
 }
 
-pub fn run_mqtt(config: &MqttConfig, initial_state: &State, state_sender: Sender<State>) {
+pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
     env_logger::init();
 
-    let user_name = if config.auth_username.is_empty() { None } else { Some(config.auth_username.as_str()) };
-    let password = if config.auth_password.is_empty() { None } else { Some(config.auth_password.as_str()) };
+    let user_name = if config.auth_username.is_empty() {
+        None
+    } else {
+        Some(config.auth_username.as_str())
+    };
+    let password = if config.auth_password.is_empty() {
+        None
+    } else {
+        Some(config.auth_password.as_str())
+    };
 
     smol::block_on(async {
         let client = Client::with_auto_id().unwrap();
-        client.set_username_and_password(user_name, password).expect("Invalid username and password for MQTT server");
+        client
+            .set_username_and_password(user_name, password)
+            .expect("Invalid username and password for MQTT server");
         let rc = client
-            .connect(config.server_address.as_str(), config.server_port as std::os::raw::c_int, std::time::Duration::from_secs(5), None)
-            .await.expect("Unable to connect to MQTT server");
+            .connect(
+                config.server_address.as_str(),
+                config.server_port as std::os::raw::c_int,
+                std::time::Duration::from_secs(5),
+                None,
+            )
+            .await
+            .expect("Unable to connect to MQTT server");
         info!("Connection status: {rc}");
 
         let subscriptions = client.subscriber().unwrap();
 
         let power_state_topic = config.app_topic_prefix.clone() + "/power_state/set";
-        client.subscribe(power_state_topic.as_str(), QoS::AtMostOnce).await.unwrap();
+        client
+            .subscribe(power_state_topic.as_str(), QoS::AtMostOnce)
+            .await
+            .unwrap();
         let home_assistant_status_topic = config.discovery_topic_prefix.clone() + "/status";
-        client.subscribe(home_assistant_status_topic.as_str(), QoS::AtMostOnce).await.unwrap();
+        client
+            .subscribe(home_assistant_status_topic.as_str(), QoS::AtMostOnce)
+            .await
+            .unwrap();
         info!("Subscribed to relevant topics");
 
-        // TODO do not publish device config here, but only once after starting
         publish_device_config(&client, config).await;
-
-        let mut state = initial_state.clone();
         publish_state(&client, config, &state).await;
 
         let power_state_set_topic = config.app_topic_prefix.clone() + "/power_state/set";
@@ -93,14 +140,22 @@ pub fn run_mqtt(config: &MqttConfig, initial_state: &State, state_sender: Sender
                     if msg.topic == power_state_set_topic {
                         if msg.payload == b"on" {
                             info!("Turning backlight on");
-                            state.backlight_active_current = true;
+                            {
+                                let mut state = state
+                                    .write()
+                                    .expect("Unable to acquire write lock on state");
+                                state.backlight_active_current = true;
+                            }
                             publish_state(&client, config, &state).await;
-                            state_sender.send(state.clone()).expect("Unable to send requested state");
                         } else {
                             info!("Turning backlight off");
-                            state.backlight_active_current = false;
+                            {
+                                let mut state = state
+                                    .write()
+                                    .expect("Unable to acquire write lock on state");
+                                state.backlight_active_current = false;
+                            }
                             publish_state(&client, config, &state).await;
-                            state_sender.send(state.clone()).expect("Unable to send requested state");
                         }
                     } else if msg.topic == home_assistant_status_topic && msg.payload == b"online" {
                         info!("Publishing state again on Home Assistant restart");
@@ -111,4 +166,5 @@ pub fn run_mqtt(config: &MqttConfig, initial_state: &State, state_sender: Sender
             task::sleep(std::time::Duration::from_millis(100)).await;
         }
     });
+    info!("MQTT thread is exiting.");
 }

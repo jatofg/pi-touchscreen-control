@@ -1,7 +1,7 @@
 use std::time::Duration;
 use crate::config;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct State {
     pub backlight_active_current: bool,
     pub backlight_active_dimmed: bool,
@@ -16,7 +16,7 @@ impl State {
     pub fn new(config: &config::DimmerConfig, backlight_active_current: bool, brightness_current: u8) -> Self {
         Self {
             backlight_active_current,
-            backlight_active_dimmed: config.turn_backlight_off,
+            backlight_active_dimmed: !config.turn_backlight_off,
             brightness_current,
             brightness_dimmed: config.dimmed_brightness,
             brightness_full: config.full_brightness,
