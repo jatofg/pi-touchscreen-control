@@ -36,7 +36,7 @@ fn set_brightness(config: &DimmerConfig, brightness: u8) {
 }
 
 fn dim_down(current_state: &State, state: &Arc<RwLock<State>>) {
-    if current_state.backlight_active_current != current_state.backlight_active_dimmed
+    if (current_state.backlight_active_current && !current_state.backlight_active_dimmed)
         || current_state.brightness_current != current_state.brightness_dimmed
     {
         info!("Dimming down due to inactivity");
