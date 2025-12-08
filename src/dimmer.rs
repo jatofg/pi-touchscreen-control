@@ -35,26 +35,28 @@ fn set_brightness(config: &DimmerConfig, brightness: u8) {
     info!("Brightness set to {}", brightness);
 }
 
-fn dim_down(state: &Arc<RwLock<State>>) {
-    let mut state = state
-        .write()
-        .expect("Unable to acquire write lock on state");
-    if !state.backlight_active_dimmed && state.backlight_active_current {
-        state.backlight_active_current = false;
-    }
-    if state.backlight_active_dimmed && state.brightness_current > state.brightness_dimmed {
+fn dim_down(current_state: &State, state: &Arc<RwLock<State>>) {
+    if current_state.backlight_active_current != current_state.backlight_active_dimmed
+        || current_state.brightness_current != current_state.brightness_dimmed
+    {
+        info!("Dimming down due to inactivity");
+        let mut state = state
+            .write()
+            .expect("Unable to acquire write lock on state");
+        state.backlight_active_current = state.backlight_active_dimmed;
         state.brightness_current = state.brightness_dimmed;
     }
 }
 
-fn dim_up(state: &Arc<RwLock<State>>) {
-    let mut state = state
-        .write()
-        .expect("Unable to acquire write lock on state");
-    if !state.backlight_active_current {
+fn dim_up(current_state: &State, state: &Arc<RwLock<State>>) {
+    if !current_state.backlight_active_current
+        || current_state.brightness_current != current_state.brightness_full
+    {
+        info!("Dimming up due to touch input");
+        let mut state = state
+            .write()
+            .expect("Unable to acquire write lock on state");
         state.backlight_active_current = true;
-    }
-    if state.brightness_current < state.brightness_full {
         state.brightness_current = state.brightness_full;
     }
 }
@@ -130,14 +132,12 @@ pub fn run_dimmer(config: &DimmerConfig, state: Arc<RwLock<State>>) {
                 }
                 if new_touch {
                     last_touch = Instant::now();
-                    dim_up(&state);
-                    info!("Touch detected - dimming up");
+                    dim_up(&current_state, &state);
                 }
             }
 
             if last_touch.elapsed() > current_state.timeout {
-                dim_down(&state);
-                info!("Timeout reached - dimming down");
+                dim_down(&current_state, &state);
             }
         }
 
