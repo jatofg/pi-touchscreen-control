@@ -62,6 +62,8 @@ async fn publish_device_config(client: &Client, config: &MqttConfig) {
         )
         .await
         .expect("Unable to publish availability");
+
+    info!("Published device config");
 }
 
 async fn publish_state(client: &Client, config: &MqttConfig, state: &Arc<RwLock<State>>) {
@@ -92,7 +94,7 @@ fn get_home_assistant_status_topic(config: &MqttConfig) -> String {
 }
 
 async fn run_state_publisher(client: &Client, config: &MqttConfig, state: &Arc<RwLock<State>>) {
-    let previous_state = state
+    let mut previous_state = state
         .read()
         .expect("Unable to acquire read lock on state")
         .clone();
@@ -104,6 +106,7 @@ async fn run_state_publisher(client: &Client, config: &MqttConfig, state: &Arc<R
         if current_state != previous_state {
             publish_state(client, config, state).await;
         }
+        previous_state = current_state;
         task::sleep(Duration::from_millis(100)).await;
     }
 }

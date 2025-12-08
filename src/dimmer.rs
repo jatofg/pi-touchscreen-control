@@ -77,10 +77,13 @@ pub fn get_current_brightness(config: &DimmerConfig) -> u8 {
         .write(false)
         .open(path)
         .expect("Unable to open actual_brightness");
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)
+    let mut brightness_str = String::new();
+    file.read_to_string(&mut brightness_str)
         .expect("Unable to read from actual_brightness");
-    String::from_utf8(buffer).unwrap().parse::<u8>().unwrap()
+    brightness_str
+        .trim()
+        .parse::<u8>()
+        .expect(("Unable to parse brightness: ".to_string() + brightness_str.as_str()).as_str())
 }
 
 pub fn get_current_power(config: &DimmerConfig) -> bool {
