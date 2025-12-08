@@ -77,10 +77,10 @@ pub fn get_current_brightness(config: &DimmerConfig) -> u8 {
         .write(false)
         .open(path)
         .expect("Unable to open actual_brightness");
-    let mut buffer = [0u8; 1];
-    file.read_exact(&mut buffer)
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
         .expect("Unable to read from actual_brightness");
-    buffer[0]
+    String::from_utf8(buffer).unwrap().parse::<u8>().unwrap()
 }
 
 pub fn get_current_power(config: &DimmerConfig) -> bool {
@@ -93,7 +93,7 @@ pub fn get_current_power(config: &DimmerConfig) -> bool {
     let mut buffer = [0u8; 1];
     file.read_exact(&mut buffer)
         .expect("Unable to read from bl_power");
-    buffer[0] == 0
+    buffer == *b"0"
 }
 
 pub fn run_dimmer(config: &DimmerConfig, state: Arc<RwLock<State>>) {

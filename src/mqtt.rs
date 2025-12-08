@@ -3,10 +3,12 @@ extern crate env_logger;
 use crate::config::MqttConfig;
 use crate::state::State;
 use async_std::task;
+use futures::join;
 use log::info;
 use mosquitto_rs::*;
 use serde_json::json;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 async fn publish_device_config(client: &Client, config: &MqttConfig) {
     let discovery = json!({
@@ -85,6 +87,62 @@ async fn publish_state(client: &Client, config: &MqttConfig, state: &Arc<RwLock<
     info!("Published power state");
 }
 
+fn get_home_assistant_status_topic(config: &MqttConfig) -> String {
+    config.discovery_topic_prefix.clone() + "/status"
+}
+
+async fn run_state_publisher(client: &Client, config: &MqttConfig, state: &Arc<RwLock<State>>) {
+    let previous_state = state
+        .read()
+        .expect("Unable to acquire read lock on state")
+        .clone();
+    loop {
+        let current_state = state
+            .read()
+            .expect("Unable to acquire read lock on state")
+            .clone();
+        if current_state != previous_state {
+            publish_state(client, config, state).await;
+        }
+        task::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+async fn run_mqtt_listener(client: &Client, config: &MqttConfig, state: &Arc<RwLock<State>>) {
+    let subscriptions = client.subscriber().unwrap();
+    let power_state_set_topic = config.app_topic_prefix.clone() + "/power_state/set";
+    let home_assistant_status_topic = get_home_assistant_status_topic(config);
+    loop {
+        if let Ok(event) = subscriptions.recv().await {
+            if let Event::Message(msg) = event {
+                if msg.topic == power_state_set_topic {
+                    if msg.payload == b"on" {
+                        info!("Turning backlight on");
+                        {
+                            let mut state = state
+                                .write()
+                                .expect("Unable to acquire write lock on state");
+                            state.backlight_active_current = true;
+                        }
+                    } else {
+                        info!("Turning backlight off");
+                        {
+                            let mut state = state
+                                .write()
+                                .expect("Unable to acquire write lock on state");
+                            state.backlight_active_current = false;
+                        }
+                    }
+                } else if msg.topic == home_assistant_status_topic && msg.payload == b"online" {
+                    info!("Publishing state again on Home Assistant restart");
+                    publish_state(&client, config, &state).await;
+                }
+            }
+        }
+        task::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
     env_logger::init();
 
@@ -115,14 +173,12 @@ pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
             .expect("Unable to connect to MQTT server");
         info!("Connection status: {rc}");
 
-        let subscriptions = client.subscriber().unwrap();
-
         let power_state_topic = config.app_topic_prefix.clone() + "/power_state/set";
         client
             .subscribe(power_state_topic.as_str(), QoS::AtMostOnce)
             .await
             .unwrap();
-        let home_assistant_status_topic = config.discovery_topic_prefix.clone() + "/status";
+        let home_assistant_status_topic = get_home_assistant_status_topic(config);
         client
             .subscribe(home_assistant_status_topic.as_str(), QoS::AtMostOnce)
             .await
@@ -132,39 +188,10 @@ pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
         publish_device_config(&client, config).await;
         publish_state(&client, config, &state).await;
 
-        let power_state_set_topic = config.app_topic_prefix.clone() + "/power_state/set";
-
-        loop {
-            if let Ok(event) = subscriptions.recv().await {
-                if let Event::Message(msg) = event {
-                    if msg.topic == power_state_set_topic {
-                        if msg.payload == b"on" {
-                            info!("Turning backlight on");
-                            {
-                                let mut state = state
-                                    .write()
-                                    .expect("Unable to acquire write lock on state");
-                                state.backlight_active_current = true;
-                            }
-                            publish_state(&client, config, &state).await;
-                        } else {
-                            info!("Turning backlight off");
-                            {
-                                let mut state = state
-                                    .write()
-                                    .expect("Unable to acquire write lock on state");
-                                state.backlight_active_current = false;
-                            }
-                            publish_state(&client, config, &state).await;
-                        }
-                    } else if msg.topic == home_assistant_status_topic && msg.payload == b"online" {
-                        info!("Publishing state again on Home Assistant restart");
-                        publish_state(&client, config, &state).await;
-                    }
-                }
-            }
-            task::sleep(std::time::Duration::from_millis(100)).await;
-        }
+        let state_publisher_fut = run_state_publisher(&client, &config, &state);
+        let mqtt_listener_fut = run_mqtt_listener(&client, &config, &state);
+        join!(state_publisher_fut, mqtt_listener_fut);
     });
+
     info!("MQTT thread is exiting.");
 }
