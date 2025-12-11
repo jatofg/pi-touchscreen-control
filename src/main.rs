@@ -8,6 +8,8 @@ mod mqtt;
 mod state;
 
 fn main() {
+    env_logger::init();
+
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
         println!("Usage: pi-touchscreen-control <config file>");

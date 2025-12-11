@@ -100,6 +100,8 @@ pub fn get_current_power(config: &DimmerConfig) -> bool {
 }
 
 pub fn run_dimmer(config: &DimmerConfig, state: Arc<RwLock<State>>) {
+    env_logger::init();
+
     let mut devices = Vec::new();
     for device_path in config.input_devices.iter() {
         devices.push(
