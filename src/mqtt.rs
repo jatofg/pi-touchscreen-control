@@ -399,8 +399,6 @@ async fn subscribe_to_topics(mqtt_data: &MqttData) {
 }
 
 pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
-    env_logger::init();
-
     let user_name = if config.auth_username.is_empty() {
         None
     } else {
