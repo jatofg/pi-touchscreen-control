@@ -1,12 +1,23 @@
 # pi-touchscreen-control
 
-This tool allows controlling the backlight of the Raspberry Pi 7" touchscreen display. It was developed for the older
-variant, but it may also work for the new one and even similar screens (feel free to test it).
+This tool allows automatically dimming the backlight of the Raspberry Pi 7" touchscreen display after inactivity and
+controlling it from Home Assistant. It was developed for the older variant of the touchscreen display, but it may also
+work for the new one and even similar screens (feel free to test it).
 
-Features:
+Features (can be used both or separately, depending on the configuration):
 
-* Automatically dim the backlight after a period of inactivity.
+* Automatically dim the backlight after a configurable period of inactivity.
 * Control the backlight and configure dimming via Home Assistant (MQTT).
+
+The following properties can be controlled from Home Assistant:
+
+* Automatic dimming (switch)
+* Activity timeout for dimming in seconds
+* Backlight enabled (switch)
+* Backlight enabled when inactive (switch)
+* Brightness when active (slider)
+* Brightness when inactive (slider)
+* Current brightness (slider)
 
 ## Building
 
