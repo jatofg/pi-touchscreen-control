@@ -1,4 +1,3 @@
-use crate::state;
 use std::fs;
 use std::time::Duration;
 use yaml_rust2::YamlLoader;
@@ -103,7 +102,7 @@ impl Config {
     }
 
     // TODO implement writing back to config file
-    pub fn apply_state(&mut self, state: &state::State) -> bool {
+    /*pub fn apply_state(&mut self, state: &state::State) -> bool {
         let mut config_changed = false;
         if state.backlight_active_dimmed != self.dimmer.turn_backlight_off {
             self.dimmer.turn_backlight_off = state.backlight_active_dimmed;
@@ -126,5 +125,5 @@ impl Config {
             config_changed = true;
         }
         config_changed
-    }
+    }*/
 }

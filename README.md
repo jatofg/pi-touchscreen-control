@@ -10,7 +10,7 @@ Features:
 
 ## Building
 
-Make sure to have all relevant build tools installed (build-essential, libssl-dev and the Rust toolchain,
+Make sure to have all relevant build tools installed (build-essential, libssl-dev, cmake and the Rust toolchain,
 see https://rustup.rs/ for instructions). Then, check out this repository, `cd` to it and run
 
 ```sh

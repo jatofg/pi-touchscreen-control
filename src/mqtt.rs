@@ -3,16 +3,18 @@ extern crate env_logger;
 use crate::config::MqttConfig;
 use crate::state::State;
 use async_std::task;
+use futures::executor::block_on;
 use futures::join;
-use log::info;
-use mosquitto_rs::*;
+use log::{error, info, warn};
+use paho_mqtt as mqtt;
 use serde_json::json;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 struct MqttData {
     state: Arc<RwLock<State>>,
-    client: Client,
+    client: mqtt::AsyncClient,
+    receiver: mqtt::AsyncReceiver<Option<mqtt::Message>>,
     discovery: serde_json::Value,
     device_config_topic: String,
     home_assistant_status_topic: String,
@@ -20,9 +22,23 @@ struct MqttData {
 
 impl MqttData {
     pub fn new(config: &MqttConfig, state: Arc<RwLock<State>>) -> Self {
+        let mut client = mqtt::AsyncClient::new(
+            mqtt::CreateOptionsBuilder::new_v3()
+                .server_uri(format!(
+                    "mqtt://{}:{}",
+                    config.server_address, config.server_port
+                ))
+                .client_id("") // generates random client ID
+                .finalize(),
+        )
+        .expect("Unable to create MQTT client");
+
+        let receiver = client.get_stream(None);
+
         Self {
             state,
-            client: Client::with_auto_id().unwrap(),
+            client,
+            receiver,
             discovery: json!({
                 "dev": {
                     "ids": config.device_id.clone(),
@@ -136,12 +152,11 @@ async fn publish_device_config(mqtt_data: &MqttData) {
     // Publish discovery
     mqtt_data
         .client
-        .publish(
+        .publish(mqtt::Message::new_retained(
             mqtt_data.device_config_topic.as_str(),
             mqtt_data.discovery.to_string().as_str(),
-            QoS::ExactlyOnce,
-            true,
-        )
+            mqtt::QoS::ExactlyOnce,
+        ))
         .await
         .expect("Unable to publish device config");
 
@@ -149,12 +164,11 @@ async fn publish_device_config(mqtt_data: &MqttData) {
     for entity in mqtt_data.discovery["cmps"].as_object().unwrap().values() {
         mqtt_data
             .client
-            .publish(
+            .publish(mqtt::Message::new_retained(
                 entity["availability_topic"].as_str().unwrap(),
                 "online",
-                QoS::ExactlyOnce,
-                true,
-            )
+                mqtt::QoS::ExactlyOnce,
+            ))
             .await
             .expect(
                 format!(
@@ -196,14 +210,17 @@ fn mqtt_payload_to_u8(value: &Vec<u8>) -> u8 {
         .unwrap()
 }
 
-async fn publish_state_for_entity(client: &Client, entity: &serde_json::Value, value: &str) {
+async fn publish_state_for_entity(
+    client: &mqtt::AsyncClient,
+    entity: &serde_json::Value,
+    value: &str,
+) {
     client
-        .publish(
+        .publish(mqtt::Message::new(
             entity["state_topic"].as_str().unwrap(),
             value,
-            QoS::ExactlyOnce,
-            false,
-        )
+            mqtt::QoS::ExactlyOnce,
+        ))
         .await
         .expect(
             format!(
@@ -313,68 +330,100 @@ async fn run_state_publisher(mqtt_data: &MqttData) {
 }
 
 async fn run_mqtt_listener(mqtt_data: &MqttData) {
-    let subscriptions = mqtt_data.client.subscriber().unwrap();
+    while let Ok(optional_msg) = mqtt_data.receiver.recv().await {
+        if let Some(msg) = optional_msg {
+            let topic = msg.topic();
+            let payload = msg.payload().to_vec();
+            if topic == mqtt_data.home_assistant_status_topic && payload == b"online" {
+                info!("Publishing state again on Home Assistant restart");
+                publish_state(&mqtt_data, None, &mqtt_data.state.read().unwrap()).await;
+            } else {
+                let mut state = mqtt_data
+                    .state
+                    .write()
+                    .expect("Unable to acquire write lock on state");
 
-    loop {
-        if let Ok(event) = subscriptions.recv().await {
-            if let Event::Message(msg) = event {
-                if msg.topic == mqtt_data.home_assistant_status_topic && msg.payload == b"online" {
-                    info!("Publishing state again on Home Assistant restart");
-                    publish_state(&mqtt_data, None, &mqtt_data.state.read().unwrap()).await;
-                } else {
-                    let mut state = mqtt_data
-                        .state
-                        .write()
-                        .expect("Unable to acquire write lock on state");
-
-                    if msg.topic
-                        == mqtt_data.discovery["cmps"]["power_state"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.backlight_active_current = mqtt_payload_to_bool(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["power_dimmed"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.backlight_active_dimmed = mqtt_payload_to_bool(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["brightness"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.brightness_current = mqtt_payload_to_u8(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["brightness_dimmed"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.brightness_dimmed = mqtt_payload_to_u8(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["brightness_full"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.brightness_full = mqtt_payload_to_u8(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["use_dimmer"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.use_dimmer = mqtt_payload_to_bool(&msg.payload);
-                    } else if msg.topic
-                        == mqtt_data.discovery["cmps"]["timeout_sec"]["command_topic"]
-                            .as_str()
-                            .unwrap()
-                    {
-                        state.timeout = mqtt_payload_to_duration(&msg.payload);
-                    }
+                if topic
+                    == mqtt_data.discovery["cmps"]["power_state"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.backlight_active_current = mqtt_payload_to_bool(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["power_dimmed"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.backlight_active_dimmed = mqtt_payload_to_bool(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["brightness"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.brightness_current = mqtt_payload_to_u8(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["brightness_dimmed"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.brightness_dimmed = mqtt_payload_to_u8(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["brightness_full"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.brightness_full = mqtt_payload_to_u8(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["use_dimmer"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.use_dimmer = mqtt_payload_to_bool(&payload);
+                } else if topic
+                    == mqtt_data.discovery["cmps"]["timeout_sec"]["command_topic"]
+                        .as_str()
+                        .unwrap()
+                {
+                    state.timeout = mqtt_payload_to_duration(&payload);
                 }
             }
+        } else {
+            warn!("Lost connection to MQTT server, will try to reconnect");
+            let mut reconnect_attempts = 0;
+            while let Err(err) = mqtt_data.client.reconnect().await {
+                if reconnect_attempts >= 10 {
+                    error!("Unable to reconnect to MQTT server after 10 attempts, exiting");
+                    return;
+                }
+                reconnect_attempts += 1;
+                warn!(
+                    "Unable to reconnect to MQTT server, retrying in 60 seconds: {}",
+                    err
+                );
+                task::sleep(Duration::from_secs(60)).await;
+            }
+            info!("Reconnected to MQTT server");
         }
         task::sleep(Duration::from_millis(100)).await;
     }
+}
+
+async fn connect_to_server(config: &MqttConfig, mqtt_data: &MqttData) {
+    let mut conn_opts = mqtt::ConnectOptionsBuilder::new_v3();
+    conn_opts
+        .keep_alive_interval(Duration::from_secs(60))
+        .clean_session(true);
+    if !config.auth_username.is_empty() {
+        conn_opts.user_name(config.auth_username.as_str());
+    }
+    if !config.auth_password.is_empty() {
+        conn_opts.password(config.auth_password.as_str());
+    }
+    mqtt_data
+        .client
+        .connect(conn_opts.finalize())
+        .await
+        .expect("Unable to connect to MQTT server");
 }
 
 async fn subscribe_to_topics(mqtt_data: &MqttData) {
@@ -382,7 +431,7 @@ async fn subscribe_to_topics(mqtt_data: &MqttData) {
         .client
         .subscribe(
             mqtt_data.home_assistant_status_topic.as_str(),
-            QoS::AtMostOnce,
+            mqtt::QoS::AtMostOnce,
         )
         .await
         .unwrap();
@@ -390,7 +439,10 @@ async fn subscribe_to_topics(mqtt_data: &MqttData) {
     for entity in mqtt_data.discovery["cmps"].as_object().unwrap().values() {
         mqtt_data
             .client
-            .subscribe(entity["command_topic"].as_str().unwrap(), QoS::AtMostOnce)
+            .subscribe(
+                entity["command_topic"].as_str().unwrap(),
+                mqtt::QoS::AtMostOnce,
+            )
             .await
             .unwrap();
     }
@@ -399,36 +451,10 @@ async fn subscribe_to_topics(mqtt_data: &MqttData) {
 }
 
 pub fn run_mqtt(config: &MqttConfig, state: Arc<RwLock<State>>) {
-    let user_name = if config.auth_username.is_empty() {
-        None
-    } else {
-        Some(config.auth_username.as_str())
-    };
-    let password = if config.auth_password.is_empty() {
-        None
-    } else {
-        Some(config.auth_password.as_str())
-    };
-
-    smol::block_on(async {
+    block_on(async {
         let mqtt_data = MqttData::new(config, state);
 
-        mqtt_data
-            .client
-            .set_username_and_password(user_name, password)
-            .expect("Invalid username and password for MQTT server");
-        let rc = mqtt_data
-            .client
-            .connect(
-                config.server_address.as_str(),
-                config.server_port as std::os::raw::c_int,
-                Duration::from_secs(5),
-                None,
-            )
-            .await
-            .expect("Unable to connect to MQTT server");
-        info!("Connection status: {rc}");
-
+        connect_to_server(config, &mqtt_data).await;
         subscribe_to_topics(&mqtt_data).await;
         publish_device_config(&mqtt_data).await;
         publish_state(&mqtt_data, None, &mqtt_data.state.read().unwrap()).await;
