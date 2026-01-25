@@ -392,7 +392,9 @@ async fn run_mqtt_listener(mqtt_data: &MqttData) {
             let mut reconnect_attempts = 0;
             while let Err(err) = mqtt_data.client.reconnect().await {
                 if reconnect_attempts >= 10 {
-                    error!("Unable to reconnect to MQTT server after 10 attempts, exiting");
+                    error!(
+                        "Unable to reconnect to MQTT server after 10 attempts, MQTT module is exiting."
+                    );
                     return;
                 }
                 reconnect_attempts += 1;
@@ -419,11 +421,21 @@ async fn connect_to_server(config: &MqttConfig, mqtt_data: &MqttData) {
     if !config.auth_password.is_empty() {
         conn_opts.password(config.auth_password.as_str());
     }
-    mqtt_data
-        .client
-        .connect(conn_opts.finalize())
-        .await
-        .expect("Unable to connect to MQTT server");
+
+    let mut connect_attempts = 0;
+    while let Err(err) = mqtt_data.client.connect(conn_opts.finalize()).await {
+        if connect_attempts >= 10 {
+            error!("Unable to connect to MQTT server after 10 attempts, MQTT module is exiting.");
+            return;
+        }
+        connect_attempts += 1;
+        warn!(
+            "Unable to connect to MQTT server, retrying in 60 seconds: {}",
+            err
+        );
+        task::sleep(Duration::from_secs(60)).await;
+    }
+    info!("Connected to MQTT server");
 }
 
 async fn subscribe_to_topics(mqtt_data: &MqttData) {
