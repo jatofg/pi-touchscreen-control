@@ -18,6 +18,7 @@ struct MqttData {
     discovery: serde_json::Value,
     device_config_topic: String,
     home_assistant_status_topic: String,
+    max_connection_attempts: u64,
 }
 
 impl MqttData {
@@ -144,6 +145,7 @@ impl MqttData {
                 + config.device_id.as_str()
                 + "/config",
             home_assistant_status_topic: config.discovery_topic_prefix.clone() + "/status",
+            max_connection_attempts: config.connection_attempts,
         }
     }
 }
@@ -390,10 +392,12 @@ async fn run_mqtt_listener(mqtt_data: &MqttData) {
         } else {
             warn!("Lost connection to MQTT server, will try to reconnect");
             let mut reconnect_attempts = 0;
+            let max_reconnect_attempts = mqtt_data.max_connection_attempts;
             while let Err(err) = mqtt_data.client.reconnect().await {
-                if reconnect_attempts >= 10 {
+                if max_reconnect_attempts > 0 && reconnect_attempts >= max_reconnect_attempts {
                     error!(
-                        "Unable to reconnect to MQTT server after 10 attempts, MQTT module is exiting."
+                        "Unable to reconnect to MQTT server after {} attempts, MQTT module is exiting.",
+                        max_reconnect_attempts
                     );
                     return;
                 }
@@ -423,9 +427,13 @@ async fn connect_to_server(config: &MqttConfig, mqtt_data: &MqttData) {
     }
 
     let mut connect_attempts = 0;
+    let max_connect_attempts = mqtt_data.max_connection_attempts;
     while let Err(err) = mqtt_data.client.connect(conn_opts.finalize()).await {
-        if connect_attempts >= 10 {
-            error!("Unable to connect to MQTT server after 10 attempts, MQTT module is exiting.");
+        if max_connect_attempts > 0 && connect_attempts >= max_connect_attempts {
+            error!(
+                "Unable to connect to MQTT server after {} attempts, MQTT module is exiting.",
+                max_connect_attempts
+            );
             return;
         }
         connect_attempts += 1;

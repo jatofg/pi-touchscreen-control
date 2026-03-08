@@ -18,6 +18,7 @@ pub struct MqttConfig {
     pub use_mqtt: bool,
     pub server_address: String,
     pub server_port: u16,
+    pub connection_attempts: u64,
     pub auth_username: String,
     pub auth_password: String,
     pub discovery_topic_prefix: String,
@@ -81,6 +82,8 @@ impl Config {
                 .as_str()
                 .unwrap_or("")
                 .to_string(),
+            connection_attempts: config["mqtt"]["connection_attempts"].as_i64().unwrap_or(10)
+                as u64,
             discovery_topic_prefix: config["mqtt"]["discovery_topic_prefix"]
                 .as_str()
                 .unwrap_or("homeassistant")

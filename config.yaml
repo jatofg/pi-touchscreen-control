@@ -21,6 +21,8 @@ mqtt:
   server_address: 127.0.0.1
   # The port of the MQTT broker.
   server_port: 1883
+  # Connection attempts to the MQTT broker (0 for infinite).
+  connection_attempts: 10
   # The username for authentication with the MQTT broker. Leave blank if no authentication is required.
   auth_username:
   # The password for authentication with the MQTT broker. Leave blank if no password is required.
