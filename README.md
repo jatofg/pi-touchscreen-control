@@ -36,6 +36,12 @@ To install, run (after building):
 sudo ./install.sh
 ```
 
+To update to a newer version (without reinstaling the config file to keep local changes), run (after building):
+
+```sh
+sudo ./update.sh
+```
+
 To uninstall:
 
 ```sh
