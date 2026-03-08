@@ -42,6 +42,8 @@ To update to a newer version (without reinstaling the config file to keep local 
 sudo ./update.sh
 ```
 
+Remember to restart the systemd service after updating (the update script will only stop it automatically).
+
 To uninstall:
 
 ```sh
