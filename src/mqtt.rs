@@ -409,6 +409,7 @@ async fn run_mqtt_listener(mqtt_data: &MqttData) {
                 task::sleep(Duration::from_secs(60)).await;
             }
             info!("Reconnected to MQTT server");
+            subscribe_to_topics(&mqtt_data).await;
         }
         task::sleep(Duration::from_millis(100)).await;
     }
